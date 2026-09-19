@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOREST — dev viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0d; color: #cfd2d8; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         display: grid; grid-template-columns: 300px 1fr 220px; height: 100vh; overflow: hidden; }
+  #panel, #side { overflow-y: auto; padding: 12px; background: #111114; border-right: 1px solid #222; }
+  #side { border-right: 0; border-left: 1px solid #222; }
+  #stage { display: grid; place-items: center; min-width: 0; min-height: 0; padding: 12px; }
+  #c { width: min(100%, calc(100vh - 24px)); aspect-ratio: 1; display: block; background: #000; cursor: grab; }
+  h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #7d8590; margin: 16px 0 6px; }
+  h2:first-child { margin-top: 0; }
+  label { display: grid; grid-template-columns: 104px 1fr 44px; gap: 6px; align-items: center; margin: 3px 0; }
+  label.wide { grid-template-columns: 60px 1fr; }
+  input[type=range] { width: 100%; }
+  input[type=text], select { width: 100%; background: #1a1a1f; color: inherit; border: 1px solid #2c2c33; padding: 3px 5px; font: inherit; }
+  button { background: #1d1d24; color: inherit; border: 1px solid #33333c; padding: 4px 8px; font: inherit; cursor: pointer; }
+  button:hover { background: #292932; }
+  .row { display: flex; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
+  .val { text-align: right; color: #8b949e; }
+  #swatches { display: grid; grid-template-columns: repeat(9, 1fr); height: 16px; margin: 6px 0; }
+  #thumb { width: 100%; aspect-ratio: 1; image-rendering: pixelated; display: block; background: #000; }
+  #stats { white-space: pre-wrap; color: #8b949e; margin-top: 8px; }
+  kbd { border: 1px solid #333; padding: 0 4px; border-radius: 3px; }
+  @media (max-width: 900px) { body { grid-template-columns: 1fr; height: auto; overflow: auto; } #stage { order: -1; } }
+</style>
+</head>
+<body>
+  <div id="panel"></div>
+  <div id="stage"><canvas id="c"></canvas></div>
+  <div id="side">
+    <h2>SVG thumbnail (image)</h2>
+    <img id="thumb" alt="SVG thumbnail">
+    <div id="stats"></div>
+    <h2>Keys</h2>
+    <div><kbd>F</kbd>/<kbd>space</kbd> flat ⇄ explore · <kbd>R</kbd>/dbl-click reset<br>drag orbit · wheel/pinch zoom<br><kbd>[</kbd> <kbd>]</kbd> prev / next fixture</div>
+  </div>
+  <script type="module" src="./dev/ui.js"></script>
+</body>
+</html>

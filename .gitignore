@@ -1,0 +1,16 @@
+.env
+fenv/
+pfp_data/
+library/
+__pycache__/
+.ipynb_checkpoints/
+*.pt
+*.npy
+*.onnx
+*.zip
+*:Zone.Identifier
+node_modules/
+viewer/build/
+contracts/out/
+contracts/cache/
+/pfp_data

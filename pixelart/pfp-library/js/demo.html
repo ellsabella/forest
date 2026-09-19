@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PFP library test</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; color: #222; background: #fff; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem 1rem; max-width: 60rem; }
+  label { display: grid; gap: .25rem; }
+  select, input { font: inherit; padding: .3rem; }
+  #out { display: flex; gap: 1.5rem; align-items: flex-start; margin-top: 1.5rem; flex-wrap: wrap; }
+  canvas { image-rendering: pixelated; border: 1px solid #ccc; }
+  #meta { font-size: .9em; white-space: pre-wrap; }
+  .swatches { display: flex; gap: 2px; margin-top: .5rem; }
+  .swatches span { width: 22px; height: 22px; display: block; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<h1>PFP library test</h1>
+<form id="f">
+  <label>hair <select name="hair"></select></label>
+  <label>headwear <select name="headwear"></select></label>
+  <label>accessory <select name="accessory"></select></label>
+  <label>expression <select name="expression"></select></label>
+  <label>seed <input name="seed" value="1"></label>
+  <label>palette seed <input name="pseed" value="1"></label>
+  <label>upload instead <input name="file" type="file" accept="image/*"></label>
+</form>
+<div id="out"><canvas id="c"></canvas><div><div id="meta"></div><div class="swatches" id="sw"></div></div></div>
+
+<script type="module">
+import { loadLibrary } from "./library.js";
+import { seededPalette, renderGrid } from "./palette.js";
+import { imageDataToIndices, gridToString } from "./quantise.js";
+
+const LIBRARY_URL = "../../library/";   // adjust to where build_library.py wrote its output
+const f = document.getElementById("f"), c = document.getElementById("c");
+const meta = document.getElementById("meta"), sw = document.getElementById("sw");
+let lib, uploaded = null;
+
+function fill(sel, values) {
+  sel.innerHTML = "";
+  for (const v of ["any", ...values]) sel.append(new Option(v, v));
+}
+
+async function update() {
+  const d = Object.fromEntries(new FormData(f));
+  const palette = seededPalette(d.pseed);
+  sw.innerHTML = palette.map(([r, g, b]) => `<span style="background:rgb(${r},${g},${b})"></span>`).join("");
+  let grid, info;
+  if (uploaded) {
+    grid = imageDataToIndices(uploaded, lib.size, { ...lib.manifest, modeFilter: lib.manifest.modeFilter });
+    info = `uploaded image, quantised with library settings\n${gridToString(grid).slice(0, 64)}…`;
+  } else {
+    const { entry, grid: g, relaxed } = await lib.pick(d, d.seed);
+    grid = g;
+    info = `id ${entry.id}\n${["hair", "headwear", "accessory", "expression"].map(k => `${k}: ${entry[k]}`).join("\n")}`
+         + (relaxed.length ? `\n(no exact match; ignored ${relaxed.join(", ")})` : "")
+         + `\nmatches: ${await lib.count(d)}`;
+  }
+  renderGrid(c, grid, lib.size, palette, 6);
+  meta.textContent = info;
+}
+
+lib = await loadLibrary(LIBRARY_URL);
+for (const k of ["hair", "headwear", "accessory", "expression"]) fill(f.elements[k], lib.vocab[k]);
+f.addEventListener("input", update);
+f.elements.file.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) { uploaded = null; return update(); }
+  const img = new Image();
+  img.onload = () => {
+    const s = Math.min(img.width, img.height), cv = document.createElement("canvas");
+    cv.width = cv.height = s;
+    cv.getContext("2d").drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, s, s);
+    uploaded = cv.getContext("2d").getImageData(0, 0, s, s);
+    update();
+  };
+  img.src = URL.createObjectURL(file);
+});
+update();
+</script>
+</body>
+</html>

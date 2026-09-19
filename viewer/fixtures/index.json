@@ -1,0 +1,125 @@
+{
+ "size": 64,
+ "fixtures": [
+  {
+   "id": "000649",
+   "file": "000649.json",
+   "label": "ponytail / headband / glasses / surprised"
+  },
+  {
+   "id": "000668",
+   "file": "000668.json",
+   "label": "long / helmet / mask / frowning"
+  },
+  {
+   "id": "000679",
+   "file": "000679.json",
+   "label": "mohawk / hood / sunglasses / frowning"
+  },
+  {
+   "id": "000743",
+   "file": "000743.json",
+   "label": "afro / beanie / headphones / winking"
+  },
+  {
+   "id": "000768",
+   "file": "000768.json",
+   "label": "bob / top hat / smiling"
+  },
+  {
+   "id": "000780",
+   "file": "000780.json",
+   "label": "curly / headband / earring / frowning"
+  },
+  {
+   "id": "000846",
+   "file": "000846.json",
+   "label": "short / beanie / neutral"
+  },
+  {
+   "id": "000993",
+   "file": "000993.json",
+   "label": "bald / hood / headphones / surprised"
+  },
+  {
+   "id": "002149",
+   "file": "002149.json",
+   "label": "ponytail / top hat / neutral"
+  },
+  {
+   "id": "002150",
+   "file": "002150.json",
+   "label": "mohawk / top hat / earring / neutral"
+  },
+  {
+   "id": "002206",
+   "file": "002206.json",
+   "label": "afro / crown / surprised"
+  },
+  {
+   "id": "002224",
+   "file": "002224.json",
+   "label": "long / hood / sunglasses / winking"
+  },
+  {
+   "id": "002254",
+   "file": "002254.json",
+   "label": "bald / hood / smiling"
+  },
+  {
+   "id": "002287",
+   "file": "002287.json",
+   "label": "bob / top hat / headphones / winking"
+  },
+  {
+   "id": "002321",
+   "file": "002321.json",
+   "label": "curly / beanie / headphones / surprised"
+  },
+  {
+   "id": "002376",
+   "file": "002376.json",
+   "label": "short / headband / sunglasses / surprised"
+  },
+  {
+   "id": "003607",
+   "file": "003607.json",
+   "label": "mohawk / cap / eyepatch / winking"
+  },
+  {
+   "id": "003714",
+   "file": "003714.json",
+   "label": "ponytail / hood / glasses / winking"
+  },
+  {
+   "id": "003718",
+   "file": "003718.json",
+   "label": "afro / cap / glasses / neutral"
+  },
+  {
+   "id": "003728",
+   "file": "003728.json",
+   "label": "long / crown / sunglasses / frowning"
+  },
+  {
+   "id": "003751",
+   "file": "003751.json",
+   "label": "curly / cap / scarf / frowning"
+  },
+  {
+   "id": "003755",
+   "file": "003755.json",
+   "label": "short / top hat / earring / neutral"
+  },
+  {
+   "id": "003776",
+   "file": "003776.json",
+   "label": "bob / glasses / frowning"
+  },
+  {
+   "id": "003817",
+   "file": "003817.json",
+   "label": "bald / headband / sunglasses / angry"
+  }
+ ]
+}
