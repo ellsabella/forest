@@ -214,7 +214,14 @@ export function createViewer(canvas, tokens, params = PARAMS, { cols = 1 } = {})
     if (e.key === 'r') camera.setFlat(true);
   });
 
-  return { rebuild, camera, stats, gl, get trees() { return trees; }, dispose() { cancelAnimationFrame(raf); trees.forEach(t => t && disposeTree(t)); } };
+  return {
+    rebuild, camera, stats, gl, get trees() { return trees; },
+    dispose() {
+      cancelAnimationFrame(raf);
+      trees.forEach(t => t && disposeTree(t));
+      gl.getExtension('WEBGL_lose_context')?.loseContext();   // free the context now, not at GC time
+    },
+  };
 }
 
 if (typeof window !== 'undefined' && window.FOREST) {

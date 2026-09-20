@@ -211,20 +211,24 @@ const caption = (t, st) => [
   $('button', { textContent: 'copy', title: 'copy this tree\'s resolved PARAMS', onclick: () => navigator.clipboard.writeText(JSON.stringify(t.params, null, 2)) }),
   $('button', { textContent: '↗', title: 'open in Viewer', onclick: () => { Object.assign(model.single.state, st); copyInto(model.single.params, t.params); single.panel.sync(); single.apply(); showTab('single'); } }),
 ];
+// The nine tile viewers (and the forest) are created ONCE and rebuilt in place on reroll.
+// Recreating them leaked WebGL contexts (browsers allow ~16 live ones) until the oldest —
+// the Viewer / A/B / Forest — were lost and went black.
 async function buildTiles() {
-  for (const t of tiles) t.viewer?.dispose();
-  tiles.length = 0;
-  tilesEl.replaceChildren();
   legendEl.replaceChildren();
-  for (const st of model.grid.tiles) {
-    const t = { state: st, params: freshParams(), canvas: $('canvas'), viewer: null };
-    copyInto(t.params, tileParams(t));
-    tilesEl.append($('div', { className: 'tile' }, t.canvas, $('div', { className: 'cap' }, ...caption(t, st))));
+  model.grid.tiles.forEach((st, i) => {
+    if (!tiles[i]) {
+      tiles[i] = { state: st, params: freshParams(), canvas: $('canvas'), viewer: null, cap: $('div', { className: 'cap' }) };
+      tilesEl.append($('div', { className: 'tile' }, tiles[i].canvas, tiles[i].cap));
+    }
+    const t = tiles[i];
+    t.state = st;
+    copyInto(t.params, tileParams(t));                      // same params object: the viewer reads it in place
+    t.cap.replaceChildren(...caption(t, st));
     legendEl.append($('div', { className: 'cap' }, ...caption(t, st)));
-    tiles.push(t);
-  }
+  });
   const tokens = await Promise.all(tiles.map(t => makeToken(t.state, t.params)));
-  tiles.forEach((t, i) => { t.viewer = createViewer(t.canvas, tokens[i], t.params); });
+  tiles.forEach((t, i) => { if (t.viewer) t.viewer.rebuild(tokens[i]); else t.viewer = createViewer(t.canvas, tokens[i], t.params); });
   if (!forest) forest = createViewer(forestCanvas, tokens, tiles.map(t => t.params), { cols: 3 });
   else forest.rebuild(tokens);
   save();
