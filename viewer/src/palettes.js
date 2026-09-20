@@ -9,14 +9,20 @@ export const PALETTES = [
   { name: 'Meadow Green',           colours: ['#d9ed92','#b5e48c','#99d98c','#76c893','#52b69a','#34a0a4','#168aad','#1a759f','#1e6091','#184e77'] },
   { name: 'Bright Green',           colours: ['#004b23','#006400','#007200','#008000','#38b000','#70e000','#9ef01a','#ccff33'] },
   { name: 'Ocean Blue Serenity',    colours: ['#03045e','#023e8a','#0077b6','#0096c7','#00b4d8','#48cae4','#90e0ef','#ade8f4','#caf0f8'] },
-  { name: 'Pastel Fantasy',         colours: ['#ffadad','#ffd6a5','#fdffb6','#caffbf','#9bf6ff','#a0c4ff','#bdb2ff','#ffc6ff','#fffffc'] },
+  // Pastel Fantasy was nine pastels at one lightness (luminance 190–255): no ramp, rainbow speckle.
+  // Rebuilt as indigo → violet → pink → peach → cream with the same feel and a full dark → light range.
+  { name: 'Pastel Fantasy',         colours: ['#1e1240','#3b2266','#5e3a8e','#8656a8','#ac70b8','#cf8bb8','#e8a8ae','#f7c9a8','#fff0d0'] },
   { name: 'Oceanic Sunburst',       colours: ['#166281','#1e85ae','#4cb6e1','#8cd0ec','#cceaf6','#ffaf02','#fc9e02','#f88c01','#f06900'] },
   { name: 'Autumn Forest Hues',     colours: ['#437f97','#3a5867','#303036','#5a622d','#849324','#c2a31a','#ffb30f','#f68d0c','#ec6608'] },
   { name: 'Ocean Sunset Paradise',  colours: ['#00296b','#003f88','#00509d','#1a76bc','#1e91d0','#f37520','#f5841f','#f7941d','#faa819'] },
-  { name: 'CandyFloss Skies',       colours: ['#cdb4db','#e6bedc','#ffc8dd','#ffbcd5','#ffafcc','#dec8e5','#bde0fe','#b0d9ff','#a2d2ff'] },
+  // CandyFloss Skies: same problem (luminance 192–219). Rebuilt berry → pink → lilac → sky → pale.
+  { name: 'CandyFloss Skies',       colours: ['#2a0a1e','#5a1740','#8c2a5e','#b8497c','#cf6f9c','#c393bd','#a9b4dc','#a8d0f0','#d6ecfa'] },
   { name: 'Golden',                 colours: ['#cca300','#e0b400','#f5c400','#ffcd00','#ffd633','#ffde5c','#ffe785','#ffefad','#fff7d6'] },
-  { name: 'Magenta Dream',          colours: ['#b7094c','#a01a58','#892b64','#723c70','#5c4d7d','#455e89','#2e6f95','#1780a1','#0091ad'] },
-  { name: 'Fiery Orange',           colours: ['#ff4800','#ff5400','#ff6000','#ff6d00','#ff7900','#ff8500','#ff9100','#ff9e00','#ffaa00','#ffb600'] },
+  // Magenta Dream's originals spanned luminance 69–105 only. Same magenta → steel-blue drift, real range.
+  { name: 'Magenta Dream',          colours: ['#1b0620','#420f3f','#6d1a5c','#96296f','#b4437f','#a8628f','#8f83a8','#8aa9c4','#b6d3e0'] },
+  // Fiery Orange's originals were ten saturated oranges at one lightness (luminance 119–183): flat.
+  // Rebuilt dark chocolate → rust → red-orange → orange → peach.
+  { name: 'Fiery Orange',           colours: ['#1c0a04','#4a1608','#7e230a','#a8330c','#cf4a10','#ea6a16','#f88a2a','#ffab52','#ffd08a'] },
   { name: 'Green Harmony',          colours: ['#10451d','#155d27','#1a7431','#208b3a','#25a244','#2dc653','#4ad66d','#6ede8a','#92e6a7','#b7efc5'] },
 ];
 
@@ -65,15 +71,29 @@ function baseHue(hsl) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
+// Hue: the grid's digits are luminance buckets, and a textured subject flips between neighbouring
+// buckets cell by cell, so any hue jump between slot n and n+1 turns texture into chromatic speckle.
+// Single-hue ramps never show this; multi-hue palettes do. Two remedies, both circular blends:
+//   paletteHueSmooth — pull each slot's hue toward a linear sweep from slot 1's hue to slot 9's
+//                      (keeps the palette's overall drift, removes the per-slot jumps)
+//   paletteHueLock   — pull every hue toward the base hue (1 = a monochrome ramp in the base hue)
+
+const lerpHue = (a, b, k) => { let d = ((b - a + 540) % 360) - 180; return (a + d * k + 360) % 360; };
+
 export function shapePalette(hexes, {
   paletteContrast = 0, paletteDark = 0.08, paletteLight = 0.85, paletteGamma = 1,
   paletteDesat = 0, paletteDesatHue = 0, paletteDesatFrom = 0.5,
+  paletteHueSmooth = 0, paletteHueLock = 0,
 } = {}) {
   const hsl = hexes.map(hexToHsl);
   const base = baseHue(hsl);
   const n = hexes.length - 1;
+  const h0 = hsl[0][0], h1 = hsl[n][0];
   return hsl.map(([h, s, l], i) => {
     const t = i / n;
+    // hue
+    h = lerpHue(h, lerpHue(h0, h1, t), paletteHueSmooth);
+    h = lerpHue(h, base, paletteHueLock);
     // lightness
     const target = paletteDark + (paletteLight - paletteDark) * Math.pow(t, paletteGamma);
     const l2 = l + (target - l) * paletteContrast;
@@ -83,7 +103,11 @@ export function shapePalette(hexes, {
     const hueDist = Math.min(Math.abs(h - base), 360 - Math.abs(h - base)) / 180;   // 0 same hue … 1 opposite
     const s2 = s * Math.max(0, 1 - k * (paletteDesat + paletteDesatHue * hueDist));
     return hslToHex(h, s2, l2);
-  });
+  })
+  // The shaper moves HSL lightness, not luminance, so a yellow and a blue at the same L differ a lot in
+  // luminance and the sorted order can break (pastel palettes lost it by 20–40). Slots are luminance
+  // buckets: re-sort so slot 1 is always darkest.
+  .sort((a, b) => luminance(a) - luminance(b));
 }
 
 export const paletteByName = name => PALETTES.find(p => p.name.toLowerCase() === String(name).toLowerCase());

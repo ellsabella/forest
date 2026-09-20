@@ -150,3 +150,44 @@ Design:
   Stability's non-commercial licence — check before using SD-Turbo outputs commercially.
 - If the tiny model under-delivers at 64×64, fallback remains option 3 from the research
   (Cloudflare Workers AI FLUX proxy, ~$0.0005/image beyond the free daily tier).
+
+## 9. v7 — style runs from reference images (2026-09-20)
+
+The notebook is now style-switched (`STYLE` in the config cell) and every run writes to
+`pfp_data/<RUN_NAME>/` (raw, labels, vocab, grids, checkpoint) so runs never overwrite each other.
+
+**"shaman" style** — 16 references in `pfp_data/new_ref/` (1254², white background): green
+jade-pebble mosaic stone heads, moai-like, with antlers / crowns / horns / braids / nose rings / pipes /
+gold face markings. Sixteen images are far too few to train the transformer on directly, so they are
+used to steer FLUX instead:
+
+- **Source generation = img2img from a reference.** Each image starts from a random reference (or its
+  mirror), denoised from strength 0.72–0.92 with a prompt = fixed style description + attribute phrases.
+  No LoRA: `peft` is not installed and schnell-NF4 LoRA training is fiddly; revisit only if img2img
+  cannot hit the aesthetic. `gen_mode = "txt2img"` is a one-line switch to test the prompt alone.
+- **Background = black, via keying.** Images are generated on white (nothing in the face is
+  near-white, so the cut-out is clean), then `key_out` turns the white into alpha and composites on
+  black; every raw PNG is RGBA on black and the quantiser / `build_library.py` use **alpha** as the
+  background rule. Reason: the darkest jade pebbles are near-black (≈ 2,18,13), so a colour rule on a
+  black background (`max(R,G,B) < 40`) turns about a quarter of the face into index 0 (references:
+  foreground 0.37 vs 0.50); the alpha route keeps 0.49.
+- **Style clamp = img2img strength.** The first 100-image check (strength 0.72–0.92, 3 effective steps)
+  kept the attributes but drifted to FLUX's own smooth "polished jade Buddha": blocky moai geometry,
+  ear blocks, pedestal neck and the discrete pebble texture were lost. Fixes now in the notebook: strength
+  range 0.40–0.60 over a 10-step schedule (effective steps = steps × strength), a prompt that names those
+  traits explicitly, and a **strength-sweep cell (2a)** — same reference, same seed, strength 0.3→0.7 —
+  to pick the band before spending a check batch. Next escalation if that is not tight enough: a style
+  LoRA (needs `pip install peft` and a training script; not built).
+- **Vocabulary** (4 attributes, same model shape as before, values chosen from what the references
+  actually show): `figure` male/female · `headgear` none/antlers/crown/horns/headband/hood/turban/braids/bun ·
+  `accessory` none/nose ring/big earrings/glasses/sunglasses/pipe/necklace/flower ·
+  `marking` none/beard/moustache/crescent/stripes/third eye/chin lines. Expression is deliberately
+  omitted (every reference is serene, eyes closed); add it as a fifth attribute if wanted.
+- **Procedure.** (1) `RUN_NAME="v7_shaman_check"`, `N_IMAGES=100` → generate → quantise → compare
+  the 3c contact sheet against 3a (the references themselves through the quantiser). Tune strength,
+  phrases, `bg_thresh`. (2) `RUN_NAME="v7_shaman"`, `N_IMAGES=3000+`. (3) Either build the pool directly
+  with `build_library.py` (PLAN §14 — the model is optional) or train with
+  `train(64, init_from=ROOT/"ckpt_64.pt", lr=1e-4)`: warm start copies every shape-matching tensor from
+  the v6 model and re-initialises only the attribute embeddings; random horizontal flips double the
+  effective dataset. Watch the §7 nearest-neighbour check — small datasets memorise.
+- `build_library.py` now reads attribute names from `--vocab` and shards by the first attribute.

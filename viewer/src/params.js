@@ -19,6 +19,8 @@ export const RANGES = structuredClone(DEFAULT_RANGES);
  paletteDesat           saturation loss reached at slot 9 (ramps in from paletteDesatFrom)
  paletteDesatHue        extra loss for highlights whose hue differs from the palette's base hue
  paletteDesatFrom       where along the ramp (0..1) desaturation starts
+ paletteHueSmooth       0..1: pull each slot's hue toward a linear sweep slot 1 → slot 9 (kills per-slot hue jumps)
+ paletteHueLock         0..1: pull every hue toward the palette's base hue (1 = monochrome ramp)
 
  nMax                   max voxels per coloured column
  thresh                 extra voxels (2nd..nMax) need density above this

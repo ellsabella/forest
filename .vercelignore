@@ -6,5 +6,6 @@
 !pixelart/pfp-library/
 !pixelart/pfp-library/js/
 !pixelart/pfp-library/js/palette.js
+!pixelart/pfp-library/js/quantise.js
 !vercel.json
 viewer/serve.py

@@ -17,6 +17,7 @@ export const SLIDERS = {
   'Palette shaper': [
     ['paletteContrast', 0, 1, 0.01, true], ['paletteDark', 0, 0.5, 0.01, true], ['paletteLight', 0.5, 1, 0.01, true], ['paletteGamma', 0.4, 3, 0.05, true],
     ['paletteDesat', 0, 1, 0.01, true], ['paletteDesatHue', 0, 1, 0.01, true], ['paletteDesatFrom', 0, 1, 0.01, true],
+    ['paletteHueSmooth', 0, 1, 0.01, true], ['paletteHueLock', 0, 1, 0.01, true],
   ],
   'Placement': [
     ['nMax', 1, 8, 1, true], ['thresh', 0, 1, 0.01, true], ['minGap', 1, 12, 1, true], ['jitter', 0, 1, 0.01, true],
@@ -133,7 +134,8 @@ export function buildPanel(container, o) {
       $('h2', { textContent: 'Token' }),
       $('label', { className: 'wide' }, 'fixture', fixtureSel),
       $('div', { className: 'row' }, $('button', { textContent: '◀', onclick: () => step(-1) }), $('button', { textContent: '▶', onclick: () => step(1) }),
-        $('button', { textContent: 'random fixture', onclick: () => { o.state.fixture = o.fixtures[Math.floor(Math.random() * o.fixtures.length)].id; sync(); o.onToken(); } })),
+        $('button', { textContent: 'random fixture', onclick: () => { o.state.fixture = o.fixtures[Math.floor(Math.random() * o.fixtures.length)].id; sync(); o.onToken(); } }),
+        ...(o.onUpload ? [uploadButton(o.onUpload)] : [])),
       $('label', { className: 'wide' }, 'seed', seedInput),
       $('div', { className: 'row' }, $('button', { textContent: 'random seed', onclick: () => { o.state.seed = randomSeed(); sync(); o.onToken(); } })),
       $('label', { className: 'wide' }, 'palette', palSel),
@@ -180,13 +182,26 @@ export function buildPanel(container, o) {
     panel.append($('h2', { textContent: 'Column alpha' }), modeSel);
   }
 
+  // o.fixtures is a live array (uploads get appended to it): rebuild the options, keep the selection.
+  function refreshFixtures() {
+    if (!fixtureSel) return;
+    fixtureSel.replaceChildren(...o.fixtures.map(f => $('option', { value: f.id, textContent: `${f.id}  ${f.label}` })));
+    fixtureSel.value = o.state.fixture;
+  }
   function sync() {
-    if (fixtureSel) { fixtureSel.value = o.state.fixture; seedInput.value = o.state.seed; syncPal(); if (!paletteByName(o.state.pal)) palSeed.value = o.state.pal; }
+    if (fixtureSel) { refreshFixtures(); seedInput.value = o.state.seed; syncPal(); if (!paletteByName(o.state.pal)) palSeed.value = o.state.pal; }
     inputs.forEach(f => f());
   }
   sync();
   container.append(panel);
-  return { el: panel, sync, swatches, step };
+  return { el: panel, sync, swatches, step, refreshFixtures };
+}
+
+// A button that opens the file picker; `onFile(file)` gets the chosen image.
+export function uploadButton(onFile, text = 'upload image') {
+  const input = $('input', { type: 'file', accept: 'image/*', style: 'display:none' });
+  input.onchange = () => { const f = input.files?.[0]; input.value = ''; if (f) onFile(f); };
+  return $('span', {}, $('button', { textContent: text, title: 'square-crop (top-left), key white → black, quantise to 64×64', onclick: () => input.click() }), input);
 }
 
 // Paint the 9 swatches of a palette into a swatch strip.

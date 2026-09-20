@@ -47,6 +47,8 @@ export default {
   "paletteDesat": 0.35,
   "paletteDesatHue": 0.5,
   "paletteDesatFrom": 0.5,
+  "paletteHueSmooth": 0,
+  "paletteHueLock": 0,
   "nMax": 4,
   "thresh": 0.55,
   "minGap": 5,

@@ -30,6 +30,18 @@ URL: `?tab=ab|grid`, `?fixture=&seed=&pal=`, `?explore=1&yaw=&pitch=`, and `?p.<
 More fixtures:
 `cd pixelart && ../fenv/bin/python tools/export_fixtures.py --library library --out ../viewer/fixtures --ids 001234 …`
 
+**Upload any image** (`upload image` in the Viewer and each A/B panel; `upload image → all 9` on Grid /
+Forest): it is square-cropped from the top-left, the white background is keyed to black, and it goes through
+the pool quantiser ([viewer/dev/upload.js](viewer/dev/upload.js) = `pfp-library/js/quantise.js`) to a 64×64
+grid that then behaves like any fixture. `upload settings` (tone: off / stretch / equalise, key thresholds,
+contrast, midpoint, mode filter) re-quantise the session's uploads live; `build_library.py --tone` mirrors the
+tone step for the pool. Grids persist in localStorage; the source image does not.
+Palettes are luminance ramps: a textured subject flips between adjacent buckets cell by cell, so a palette
+whose adjacent slots differ a lot in hue reads as chromatic speckle, and one whose colours share a lightness
+has no ramp at all. Fix it in the palette (the shaper re-sorts shaped colours by luminance so slot 1 is always
+darkest); the `paletteHueSmooth` / `paletteHueLock` sliders (off by default) are a blunt fallback — blending
+complementary hues passes through a third hue and muddies deliberately mixed palettes.
+
 ## Layout
 
 ```

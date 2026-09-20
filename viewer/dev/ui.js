@@ -4,13 +4,16 @@
 //   Grid 3×3 — nine trees as separate views: random fixtures, nine distinct palettes; every
 //              slider is a min–max range and each tree's value is hashed from its seed within it.
 //   Forest   — the same nine trees in one scene: seamless mosaic flat, a forest when exploring.
+//   Uploads  — any image can be dropped in as a fixture (upload.js: square crop, key white → black,
+//              quantise). Grids persist in localStorage; the source image only for the session.
 // URL: ?tab=ab|grid|forest  ?fixture=000649&seed=42&pal=Golden&explore=1&yaw=&pitch=  ?p.<param>=value
 
-import { PARAMS, RANGES } from '../src/params.js';
+import { PARAMS, RANGES, G } from '../src/params.js';
 import { createViewer } from '../src/main.js';
 import { gridToSvg } from '../src/svg.js';
 import { PALETTES } from '../src/palettes.js';
-import { $, buildPanel, resolvePalette, resolveRanges, paintSwatches, randomSeed, setPath, saveDefaults } from './panel.js';
+import { $, buildPanel, uploadButton, resolvePalette, resolveRanges, paintSwatches, randomSeed, setPath, saveDefaults } from './panel.js';
+import { loadSquare, imageToGrid, keyedPreview, UPLOAD_DEFAULTS, UPLOAD_SLIDERS, TONE_MODES } from './upload.js';
 
 const STORE = 'forest-dev-v2';
 const DEFAULTS = structuredClone(PARAMS);
@@ -19,17 +22,74 @@ const saved = JSON.parse(localStorage.getItem(STORE) || '{}');
 const index = await (await fetch('./fixtures/index.json')).json();
 // "save as defaults" needs viewer/serve.py; on static hosting (Vercel) it is hidden — use export / import.
 const canSave = await fetch('/dev/ping').then(r => r.ok).catch(() => false);
-const fixtures = index.fixtures;
+const uploads = saved.uploads || {};                     // id → {grid, label}; persisted with the model
+const fixtures = [...index.fixtures, ...Object.entries(uploads).map(([id, u]) => ({ id, label: u.label, upload: true }))];  // live list
 const grids = new Map();
 async function loadGrid(id) {
+  if (uploads[id]) return uploads[id].grid;
+  if (id.startsWith('up-')) id = index.fixtures[0].id;   // an upload that has since been dropped
   if (!grids.has(id)) grids.set(id, (await (await fetch(`./fixtures/${id}.json`)).json()).grid);
   return grids.get(id);
 }
 const fixtureOr = id => fixtures.some(f => f.id === id) ? id : fixtures[0].id;
+
+// ---- uploads ----
+const MAX_UPLOADS = 16;
+const sources = new Map();                               // id → square ImageData (this session only)
+const uploadOpts = { ...UPLOAD_DEFAULTS, ...(saved.uploadOpts || {}) };
+const panels = [];                                       // every panel, to refresh fixture lists
+async function addUpload(file) {
+  const img = await loadSquare(file);
+  const id = 'up-' + Date.now().toString(36).slice(-5);
+  const label = `upload · ${file.name.replace(/\.[^.]+$/, '')}`;
+  uploads[id] = { grid: imageToGrid(img, G, uploadOpts), label };
+  sources.set(id, img);
+  fixtures.push({ id, label, upload: true });
+  const ids = Object.keys(uploads);
+  while (ids.length > MAX_UPLOADS) {                     // drop the oldest; its grid stays in any state that names it until reselected
+    const old = ids.shift(); delete uploads[old]; sources.delete(old);
+    const k = fixtures.findIndex(f => f.id === old); if (k >= 0) fixtures.splice(k, 1);
+  }
+  panels.forEach(p => p.refreshFixtures?.());
+  save();
+  return id;
+}
+// Re-quantise every upload whose source is still in memory with the current options, then refresh all views.
+function requantise() {
+  for (const [id, img] of sources) uploads[id].grid = imageToGrid(img, G, uploadOpts);
+  save();
+  refreshAll();
+}
+// Settings block for the upload pipeline (shared by all tabs).
+function uploadSettings() {
+  const preview = $('img', { style: 'width:100%;aspect-ratio:1;background:#000;display:block;margin:4px 0', alt: 'keyed source' });
+  const rows = UPLOAD_SLIDERS.map(([key, min, max, step, label]) => {
+    const val = $('span', { className: 'val', textContent: uploadOpts[key] });
+    const input = $('input', { type: 'range', min, max, step, value: uploadOpts[key] });
+    let t = 0;
+    input.oninput = () => { uploadOpts[key] = Number(input.value); val.textContent = input.value; clearTimeout(t); t = setTimeout(() => { requantise(); paint(); }, 200); };
+    return $('label', {}, label, input, val);
+  });
+  const mode = $('input', { type: 'checkbox', checked: uploadOpts.modeFilter });
+  mode.onchange = () => { uploadOpts.modeFilter = mode.checked; requantise(); };
+  const tone = $('select', {}, ...TONE_MODES.map(m => $('option', { value: m, textContent: m })));
+  tone.value = TONE_MODES.includes(uploadOpts.tone) ? uploadOpts.tone : 'off';
+  tone.onchange = () => { uploadOpts.tone = tone.value; requantise(); };
+  const paint = () => { const last = [...sources.keys()].at(-1); preview.src = last ? keyedPreview(sources.get(last), uploadOpts) : ''; preview.style.display = last ? '' : 'none'; };
+  const el = $('details', {},
+    $('summary', { textContent: 'upload settings', style: 'cursor:pointer;color:#7d8590;margin:6px 0' }),
+    $('div', { style: 'color:#7d8590;margin:2px 0 4px' }, 'square crop (top-left) → key white → black → 64×64 cell means → tone → contrast → luminance buckets. Re-quantises this session\'s uploads.'),
+    $('label', {}, 'tone', tone, $('span', { className: 'val', textContent: '' })),
+    ...rows,
+    $('label', {}, 'mode filter', mode, $('span')),
+    preview);
+  el.addEventListener('toggle', paint);
+  return el;
+}
 const freshParams = over => { const p = structuredClone(DEFAULTS); Object.assign(p, over || {}); if (!Array.isArray(p.lights) || p.lights.length !== DEFAULTS.lights.length) p.lights = structuredClone(DEFAULTS.lights); return p; };
 const copyInto = (target, src) => { for (const k of Object.keys(src)) target[k] = src[k]; };
 let saveTimer = 0;
-const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => localStorage.setItem(STORE, JSON.stringify(model)), 150); };
+const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => localStorage.setItem(STORE, JSON.stringify({ ...model, uploads, uploadOpts })), 150); };
 
 // Export / import box: the raw JSON of params + ranges, to copy into an email or paste back in.
 function exportBox(getParams, onLoad) {
@@ -107,8 +167,11 @@ function makeView(container, m, { side = null, abStage = false } = {}) {
       $('button', { textContent: 'reset PARAMS', onclick: () => { copyInto(m.params, structuredClone(DEFAULTS)); panel.sync(); apply(); } })),
     $('div', { className: 'row' }, saveButton(() => m.params)),
     exportBox(() => m.params, p => { copyInto(m.params, freshParams(p)); panel.sync(); apply(); }),
+    uploadSettings(),
   );
-  const panel = buildPanel(container, { state: m.state, params: m.params, fixtures, extra, onToken: apply, onRebuild: () => applySoon(), onLive: save });
+  const onUpload = async file => { m.state.fixture = await addUpload(file); panel.sync(); apply(); };
+  const panel = buildPanel(container, { state: m.state, params: m.params, fixtures, extra, onToken: apply, onUpload, onRebuild: () => applySoon(), onLive: save });
+  panels.push(panel);
   container.append(stage);
   if (side) container.append(side.el);
 
@@ -161,7 +224,7 @@ let forest = null;                                       // the shared-scene vie
 const tiles = [];                                        // {state, params, canvas, viewer}
 function rerollTiles({ fixtures: rf = true, seeds: rs = true, pals: rp = true } = {}) {
   const pals = [...PALETTES.map(p => p.name)].sort(() => Math.random() - 0.5);
-  const fix = [...fixtures].sort(() => Math.random() - 0.5);            // without replacement: nine different faces
+  const fix = fixtures.filter(f => !f.upload).sort(() => Math.random() - 0.5);   // pool fixtures only, without replacement: nine different faces
   model.grid.tiles = Array.from({ length: 9 }, (_, i) => ({
     fixture: rf || !model.grid.tiles ? fix[i % fix.length].id : model.grid.tiles[i].fixture,
     seed:    rs || !model.grid.tiles ? randomSeed() : model.grid.tiles[i].seed,
@@ -177,10 +240,14 @@ const gridExtra = () => $('div', {},
     $('button', { textContent: 'seeds', onclick: () => { rerollTiles({ fixtures: false, pals: false }); buildTiles(); } }),
     $('button', { textContent: 'palettes', onclick: () => { rerollTiles({ fixtures: false, seeds: false }); buildTiles(); } })),
   $('div', { className: 'row' },
+    uploadButton(async file => { const id = await addUpload(file); model.grid.tiles.forEach(t => { t.fixture = id; }); buildTiles(); }, 'upload image → all 9'),
+    $('span', { style: 'color:#7d8590;align-self:center' }, 'same image ×9, nine seeds / palettes')),
+  $('div', { className: 'row' },
     $('button', { textContent: 'flat ⇄ explore', onclick: () => { forest?.camera.toggle(); tiles.forEach(t => t.viewer?.camera.toggle()); } }),
     $('button', { textContent: 'reset ranges', title: 'back to the saved default ranges', onclick: () => { copyInto(model.grid.params, structuredClone(DEFAULTS)); for (const k of Object.keys(model.grid.ranges)) delete model.grid.ranges[k]; Object.assign(model.grid.ranges, structuredClone(RANGES)); location.reload(); } })),
   $('div', { className: 'row' }, saveButton(() => DEFAULTS)),
   exportBox(() => DEFAULTS, p => { copyInto(DEFAULTS, freshParams(p)); copyInto(model.grid.params, freshParams(p)); gridApplySoon(true); }),
+  uploadSettings(),
   $('div', { style: 'color:#7d8590;margin:6px 0 2px' }, 'Each slider is a min–max range; a tree\'s value is hashed from its seed within it. Equal min and max = fixed value. Grid 3×3 and Forest share these; "save as defaults" here stores the ranges (and the current single-value defaults).'),
 );
 // Two panels over one ranges object: a change in either re-syncs the other.
@@ -192,6 +259,8 @@ rangePanels.push(buildPanel(gridEl, rangeOpts()));
 gridEl.append(tilesEl);
 rangePanels.push(buildPanel(forestEl, rangeOpts()));
 forestEl.append(forestStage);
+// after an upload re-quantise: rebuild every view (uploads may be in use anywhere)
+function refreshAll() { single.apply(); viewA.apply(); viewB.apply(); applyTiles(true); }
 
 let gridTimer = 0;
 const gridApplySoon = rebuild => { clearTimeout(gridTimer); gridTimer = setTimeout(() => applyTiles(rebuild), 150); };
@@ -267,6 +336,6 @@ if (q.get('explore')) {
   const pose = v => v.camera.pose(Number(q.get('yaw') ?? 0.55), Number(q.get('pitch') ?? 0.62));
   pose(single.viewer); pose(viewA.viewer); pose(viewB.viewer); pose(forest); tiles.forEach(t => pose(t.viewer));
 }
-window.dev = { model, single, viewA, viewB, tiles, forest };
+window.dev = { model, single, viewA, viewB, tiles, forest, uploads, uploadOpts, addUpload, requantise, buildTiles };
 window.viewer = single.viewer;
 window.__forestReady = true;
