@@ -69,3 +69,35 @@ export function buildVoxelMesh(gl, voxels, palette, touched, P) {
   };
   return mesh;
 }
+
+// Falling-leaf ghosts (cosmetic, explore view only). For each chosen column: a chain of leaf
+// instances in the column's colour from just under its top voxel down to `floorK` (negative =
+// below the cube), every `gap` cells. Instance alpha = position along the chain (0..1),
+// variant = the column's phase. The shader lights one window of the chain at a time.
+// columns: [{x, row, c, kTop, phase}]
+export function buildFallMesh(gl, columns, palette, gap, floorK) {
+  const vs = 2 / G;
+  const centers = [], colors = [], alphas = [], variants = [];
+  for (const col of columns) {
+    const ks = [];
+    for (let k = col.kTop - gap; k >= floorK; k -= gap) ks.push(k);
+    ks.forEach((k, i) => {
+      centers.push(-1 + (col.x + 0.5) * vs, -1 + (k + 0.5) * vs, -1 + (col.row + 0.5) * vs);
+      colors.push(...palette[col.c]);
+      alphas.push(ks.length > 1 ? i / (ks.length - 1) : 0);
+      variants.push(col.phase);
+    });
+  }
+  const n = alphas.length;
+  const inst = [
+    { buf: createBuffer(gl, new Float32Array(colors)),   loc: 2, size: 3, divisor: 1 },
+    { buf: createBuffer(gl, new Float32Array(centers)),  loc: 3, size: 3, divisor: 1 },
+    { buf: createBuffer(gl, new Float32Array(alphas)),   loc: 4, size: 1, divisor: 1 },
+    { buf: createBuffer(gl, new Float32Array(variants)), loc: 5, size: 1, divisor: 1 },
+  ];
+  const top = faceBuffers(gl, [FACES[TOP]]);
+  const vao = createVAO(gl, [{ buf: top.pos, loc: 0, size: 3 }, { buf: top.nrm, loc: 1, size: 3 }, ...inst]);
+  const buffers = [...inst.map(a => a.buf), top.pos, top.nrm];
+  return { count: n, vao, verts: top.count, dispose() { buffers.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(vao); } };
+}
+

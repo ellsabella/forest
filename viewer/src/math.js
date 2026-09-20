@@ -38,19 +38,22 @@ export function ortho(out, l, r, b, t, n, f) {
   return out;
 }
 
-// view = T(0,0,-dist) · Rx(pitch) · Ry(-yaw), orbiting the origin.
+// view = T(0,0,-dist) · Rx(pitch) · Ry(-yaw) · T(-target), orbiting `target`.
 // pitch = π/2 looks straight down −Y with −Z up the screen (the flat pose).
-export function orbitView(out, yaw, pitch, dist) {
+export function orbitView(out, yaw, pitch, dist, t = [0, 0, 0]) {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   out[0]=cy;   out[1]=sp*sy;  out[2]=-cp*sy; out[3]=0;
   out[4]=0;    out[5]=cp;     out[6]=sp;     out[7]=0;
   out[8]=sy;   out[9]=-sp*cy; out[10]=cp*cy; out[11]=0;
-  out[12]=0;   out[13]=0;     out[14]=-dist; out[15]=1;
+  out[12] = -(cy * t[0] + sy * t[2]);
+  out[13] = -(sp * sy * t[0] + cp * t[1] - sp * cy * t[2]);
+  out[14] = -(-cp * sy * t[0] + sp * t[1] + cp * cy * t[2]) - dist;
+  out[15] = 1;
   return out;
 }
 
-// Camera world position for orbitView: Rᵀ · (0,0,dist).
-export function orbitEye(yaw, pitch, dist) {
+// Camera world position for orbitView: target + Rᵀ · (0,0,dist).
+export function orbitEye(yaw, pitch, dist, t = [0, 0, 0]) {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-  return [-cp * sy * dist, sp * dist, cp * cy * dist];
+  return [t[0] - cp * sy * dist, t[1] + sp * dist, t[2] + cp * cy * dist];
 }

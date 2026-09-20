@@ -7,10 +7,28 @@
 // Only + - * / and sqrt are used on the placement path so results are identical across engines.
 
 import { G } from './params.js';
-import { hashInt, seedParts } from './hash.js';
+import { hashInt, seedParts, makeRng } from './hash.js';
 import { makeNoise3 } from './noise.js';
 
 export const voxelIdx = (xi, yi, zi) => xi * G * G + yi * G + zi;
+
+// Seeded leaf clumps below the main canopy: blob density pockets centred under coloured
+// cells at heights clumpLo..clumpHi. Columns' extra voxels gather there, reading as
+// lower branches. → [{x, k, row, r}] in cell units.
+export function makeClumps(grid, rng, P) {
+  const cells = [];
+  for (let i = 0; i < G * G; i++) if (grid.charCodeAt(i) !== 48) cells.push(i);
+  const clumps = [];
+  for (let c = 0; c < P.clumpCount && cells.length; c++) {
+    const i = cells[Math.floor(rng() * cells.length)];
+    clumps.push({
+      x: i % G, row: Math.floor(i / G),
+      k: (P.clumpLo + (P.clumpHi - P.clumpLo) * rng()) * (G - 1),
+      r: P.clumpSize * (0.6 + 0.8 * rng()),
+    });
+  }
+  return clumps;
+}
 
 export function centroid(grid) {
   let sx = 0, sy = 0, n = 0;
@@ -24,6 +42,7 @@ export function buildVoxels(grid, seedStr, P) {
   const [s0, s1] = seedParts(seedStr);
   const noise3 = makeNoise3(s0, s1);
   const [cx, cy] = centroid(grid);
+  const clumps = makeClumps(grid, makeRng(s0, s1, 99), P);
   const filled = new Uint8Array(G * G * G);
   const voxels = [];                       // {x, k, row, c, w}
   const dens = new Float32Array(G);
@@ -38,14 +57,21 @@ export function buildVoxels(grid, seedStr, P) {
       const dx = x - cx, dy = row - cy;
       const r = Math.sqrt(dx * dx + dy * dy) * rNorm;
       const dome = P.crownTop - P.crownDrop * r * r;
+      const near = clumps.filter(c => (c.x - x) * (c.x - x) + (c.row - row) * (c.row - row) < c.r * c.r);
       for (let k = 0; k < G; k++) {
         const u = (k / (G - 1) - dome) / P.crownThick;
         const shell = u * u < 1 ? (1 - u * u) * (1 - u * u) : 0;
+        let blob = 0;
+        for (const c of near) {
+          const q = ((c.x - x) * (c.x - x) + (c.row - row) * (c.row - row) + (c.k - k) * (c.k - k)) / (c.r * c.r);
+          if (q < 1) blob += (1 - q) * (1 - q);
+        }
         const n = noise3(x / s, row / s, k / s) * 0.6
                 + noise3(2 * x / s, 2 * row / s, 2 * k / s) * 0.3
                 + noise3(4 * x / s, 4 * row / s, 4 * k / s) * 0.1;
         const j = hashInt(x ^ s1, k ^ s0, row) - 0.5;
-        dens[k] = shell * ((1 - P.noiseWeight) + P.noiseWeight * n + P.jitter * j);
+        dens[k] = shell * ((1 - P.noiseWeight) + P.noiseWeight * n + P.jitter * j)
+                + P.clumpStrength * Math.min(1, blob) * (0.5 + 0.5 * n + 0.5 * P.jitter * j);
       }
 
       // Top-nMax depths by density, at least minGap apart. First is always placed.
@@ -73,5 +99,5 @@ export function buildVoxels(grid, seedStr, P) {
     }
   }
   voxels.sort((a, b) => a.k - b.k);        // draw low → high: back-to-front for a camera above
-  return { filled, voxels, cx, cy };
+  return { filled, voxels, cx, cy, clumps };
 }

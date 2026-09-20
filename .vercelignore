@@ -1,0 +1,10 @@
+# Only the viewer and the palette module it imports are deployed. Everything else stays out.
+*
+!viewer/
+!viewer/**
+!pixelart/
+!pixelart/pfp-library/
+!pixelart/pfp-library/js/
+!pixelart/pfp-library/js/palette.js
+!vercel.json
+viewer/serve.py

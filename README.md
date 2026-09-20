@@ -13,13 +13,21 @@ SVG builder and the HTML/JS/GLSL viewer all live on-chain.
 ## Run the dev viewer
 
 ```
-cd ~/forest && python3 -m http.server 8000 --bind 127.0.0.1
+cd ~/forest && python3 viewer/serve.py
 # open http://localhost:8000/viewer/dev.html
 ```
 
-Pick a fixture / seed / palette, drag to break the flat view, tune the sliders; `copy PARAMS` puts the
-current values on the clipboard to paste into [viewer/src/params.js](viewer/src/params.js). State is kept
-in localStorage (`reset PARAMS` clears it). More fixtures:
+(`serve.py` is `http.server` with caching disabled, so edited modules load on a plain reload.
+If you use another static server, hard-reload — Ctrl+Shift+R — after editing `viewer/src/`.)
+
+Four tabs: **Viewer** (one tree, all sliders, SVG thumbnail), **A / B** (two independent trees side by
+side), **Grid 3×3** (nine random fixtures × nine palettes as separate views; every slider is a min–max
+range and each tree's value is hashed from its seed within it — `↗` sends a tree to the Viewer), and
+**Forest** (the same nine in one scene: a seamless mosaic when flat, a forest when exploring). Drag to break the flat view,
+tune the sliders; `copy PARAMS` puts the current values on the clipboard to paste into
+[viewer/src/params.js](viewer/src/params.js). State is kept in localStorage (`reset PARAMS` clears it).
+URL: `?tab=ab|grid`, `?fixture=&seed=&pal=`, `?explore=1&yaw=&pitch=`, and `?p.<param>=value` for any param.
+More fixtures:
 `cd pixelart && ../fenv/bin/python tools/export_fixtures.py --library library --out ../viewer/fixtures --ids 001234 …`
 
 ## Layout

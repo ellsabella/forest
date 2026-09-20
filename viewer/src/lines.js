@@ -6,11 +6,12 @@ import { G } from './params.js';
 import { createBuffer, createVAO } from './gl.js';
 
 // Merge collinear consecutive unit steps so straight runs are one capsule (fewer joints, fewer verts).
+// A segment's optional 7th value is its fade (roots dim at each turn); runs only merge within one fade.
 function mergeRuns(segs) {
   const out = [];
   for (const s of segs) {
     const p = out[out.length - 1];
-    if (p && p[3] === s[0] && p[4] === s[1] && p[5] === s[2]) {
+    if (p && p[3] === s[0] && p[4] === s[1] && p[5] === s[2] && (p[6] ?? 1) === (s[6] ?? 1)) {
       const pd = [Math.sign(p[3] - p[0]), Math.sign(p[4] - p[1]), Math.sign(p[5] - p[2])];
       const sd = [s[3] - s[0], s[4] - s[1], s[5] - s[2]];
       if (pd[0] === sd[0] && pd[1] === sd[1] && pd[2] === sd[2]) { p[3] = s[3]; p[4] = s[4]; p[5] = s[5]; continue; }
@@ -34,8 +35,9 @@ export function buildLineMesh(gl, walks, cellColour, P) {
       const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
       const L = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
       const u = [d[0] / L, d[1] / L, d[2] / L];
+      const f = s[6] ?? 1;
       for (const [p, e] of [[a, 0], [b, 1]]) for (const side of [-1, 1]) {
-        pos.push(...p); dir.push(...u); uv.push(e, side); col.push(...c); len.push(L);
+        pos.push(...p); dir.push(...u); uv.push(e, side); col.push(c[0] * f, c[1] * f, c[2] * f); len.push(L);
       }
       idx.push(vi, vi + 1, vi + 2, vi + 1, vi + 3, vi + 2);
       vi += 4;

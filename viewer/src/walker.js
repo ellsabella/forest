@@ -14,10 +14,60 @@ import { makeRng, seedParts } from './hash.js';
 const N = G + 1;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// The lattice extends P.trunkDepth cells below the voxel cube (y from -D to G) so the
+// trunk has room to descend and converge; voxels only ever occupy y in 0..G-1. The ground
+// is y = -D; roots may dip a further P.rootDip cells below it.
+let D = 0, DIP = 0;
+const ground = () => -D;
+const yMin = () => -D - DIP;
+
 // Canonical edge key: lower node id * 3 + axis.
 function edgeKey(a, b, ax) {
   const m = a[ax] < b[ax] ? a : b;
-  return ((m[0] * N + m[1]) * N + m[2]) * 3 + ax;
+  return ((m[0] * (N + D + DIP) + (m[1] + D + DIP)) * N + m[2]) * 3 + ax;
+}
+
+const inLattice = (v, ax) => v[ax] >= (ax === 1 ? yMin() : 0) && v[ax] <= G;
+
+// Root mode: crawl outward across the floor (y within [ground - rootDip, ground]), turning
+// at random, fading at every turn, until the edge of the square or another path.
+// segs entries carry a 7th value: the fade (1 for canopy/trunk segments).
+function runRoot(start, initAxis, initDir, rng, occupied, segs, ax0, az0, P, fade = 1) {
+  let cur = [...start], curAxis = initAxis, curDir = initDir;
+  let lastH = initAxis === 1 ? [-1, 0] : [initAxis, initDir];    // last horizontal heading
+  for (let step = 0; step < P.maxSteps; step++) {
+    if (rng() < P.rootTerminate) break;
+    const dNow = Math.sqrt((cur[0] - ax0) ** 2 + (cur[2] - az0) ** 2);
+    const opts = [];
+    let total = 0;
+    for (let ax = 0; ax < 3; ax++) {
+      for (const d of [-1, 1]) {
+        if (ax === curAxis && d === -curDir) continue;
+        const nxt = [...cur];
+        nxt[ax] += d;
+        if (ax === 1) { if (nxt[1] > ground() || nxt[1] < yMin()) continue; }
+        else if (nxt[ax] < 0 || nxt[ax] > G) { opts.push({ nxt, ax, d, w: 0.5, edge: true }); total += 0.5; continue; }
+        let w = ax === 1 ? P.rootWiggle : 1;
+        if (ax !== 1 && Math.sqrt((nxt[0] - ax0) ** 2 + (nxt[2] - az0) ** 2) > dNow) w *= P.rootOutward;
+        if (ax === curAxis && d === curDir) w *= P.rootStraight;
+        opts.push({ nxt, ax, d, w });
+        total += w;
+      }
+    }
+    if (total === 0) break;
+    let t = rng() * total, pick = opts[opts.length - 1];
+    for (const o of opts) { if ((t -= o.w) <= 0) { pick = o; break; } }
+    if (pick.edge) break;                                          // reached the edge of the square
+    const ek = edgeKey(cur, pick.nxt, pick.ax);
+    if (occupied.has(ek)) break;                                   // merged into another root
+    // A horizontal change of heading is a "turn away from the source" → dim. Vertical wiggles don't count.
+    if (pick.ax !== 1 && curAxis !== 1 && (pick.ax !== curAxis || pick.d !== curDir)) fade *= P.rootFade;
+    if (pick.ax !== 1 && curAxis === 1 && (pick.ax !== lastH[0] || pick.d !== lastH[1])) fade *= P.rootFade;
+    if (pick.ax !== 1) lastH = [pick.ax, pick.d];
+    occupied.add(ek);
+    segs.push([...cur, ...pick.nxt, fade]);
+    curAxis = pick.ax; curDir = pick.d; cur = pick.nxt;
+  }
 }
 
 const inVoxelBounds = v => v[0] >= 0 && v[0] < G && v[1] >= 0 && v[1] < G && v[2] >= 0 && v[2] < G;
@@ -108,7 +158,7 @@ function runInitialRay(start, axIdx, dir, filled, occupied, segs) {
 // Surface mode = reference. Flight mode = weighted step: descend, drift toward the trunk
 // axis, orbit once close, prefer straight runs. Walks end on contact with any earlier
 // path (that merging is what bundles the trunk), at the ground, or by chance.
-function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, filled, ax0, az0, P) {
+function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, filled, ax0, az0, P, clumps) {
   let cur = [...start];
   let curAxis = initAxis, curDir = initDir;
   let flying = false, surfaceSteps = 0, flightSteps = 0;
@@ -122,7 +172,7 @@ function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, fill
         for (const d of [-1, 1]) {
           const nxt = [...cur];
           nxt[ax] += d;
-          if (nxt[ax] < 0 || nxt[ax] > G) continue;
+          if (!inLattice(nxt, ax)) continue;
           const ek = edgeKey(cur, nxt, ax);
           if (occupied.has(ek)) continue;
           if (!isOuterSurfaceEdge(cur, nxt, ax, filled)) continue;
@@ -141,7 +191,15 @@ function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, fill
     } else {
       const ddx = cur[0] - ax0, ddz = cur[2] - az0;
       const dNow = Math.sqrt(ddx * ddx + ddz * ddz);
-      const attract = P.attract + (1 - P.attract) * P.canopyDamp * (cur[1] / G);
+      const attract = P.attract + (1 - P.attract) * P.canopyDamp * (Math.max(0, cur[1]) / G);
+      // Nearest clump whose pull radius we are inside → steps that close on it are favoured,
+      // so branch lines run out to the lower leaf clumps instead of only down the trunk.
+      let clump = null, clumpD = Infinity;
+      for (const c of clumps) {
+        const dx = c.x + 0.5 - cur[0], dy = c.k + 0.5 - cur[1], dz = c.row + 0.5 - cur[2];
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < c.r * P.clumpPull && d < clumpD) { clump = c; clumpD = d; }
+      }
       const opts = [];
       let total = 0;
       for (let ax = 0; ax < 3; ax++) {
@@ -149,7 +207,7 @@ function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, fill
           if (ax === curAxis && d === -curDir) continue;          // no U-turns
           const nxt = [...cur];
           nxt[ax] += d;
-          if (nxt[ax] < 0 || nxt[ax] > G) continue;
+          if (!inLattice(nxt, ax) || nxt[1] < ground()) continue;   // roots handle below-ground
           let w = 1;
           if (ax === 1) w *= d < 0 ? P.downBias : P.upBias;
           else {
@@ -157,6 +215,10 @@ function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, fill
             if (Math.sqrt(ex * ex + ez * ez) < dNow) w *= dNow < P.orbitRadius ? P.repel : attract;
           }
           if (ax === curAxis && d === curDir) w *= P.straightBias;
+          if (clump) {
+            const dx = clump.x + 0.5 - nxt[0], dy = clump.k + 0.5 - nxt[1], dz = clump.row + 0.5 - nxt[2];
+            if (Math.sqrt(dx * dx + dy * dy + dz * dz) < clumpD) w *= P.clumpAttract;
+          }
           // Until minFlight steps have passed, steer around leaves instead of landing on them —
           // otherwise a dense canopy recaptures every walk and nothing descends to form a trunk.
           if (flightSteps < P.minFlight && edgeVoxelFilled(cur, nxt, ax, filled)) continue;
@@ -179,14 +241,19 @@ function runRandomWalkBiased(start, initAxis, initDir, rng, occupied, segs, fill
       curAxis = pick.ax; curDir = pick.d; cur = pick.nxt;
       flightSteps++;
 
-      if (cur[1] === 0) break;                                     // reached the ground
+      if (cur[1] === ground()) {                                   // reached the ground → become a root
+        runRoot(cur, curAxis, curDir, rng, occupied, segs, ax0, az0, P);
+        break;
+      }
       if (flightSteps >= Math.max(1, P.minFlight) && nodeIsOnGlassSurface(cur, filled)) { flying = false; surfaceSteps = 0; }
     }
   }
 }
 
 // → { walks: [{ segs: [[x0,y0,z0,x1,y1,z1], …], cell: [x, row] }], touched: Set<voxelIdx> }
-export function buildForestWalks(filled, seedStr, cx, cy, P) {
+export function buildForestWalks(filled, seedStr, cx, cy, P, clumps = []) {
+  D = Math.max(0, Math.round(P.trunkDepth));
+  DIP = Math.max(0, Math.round(P.rootDip));
   const [s0, s1] = seedParts(seedStr);
   const occupied = new Set();
   const walks = [];
@@ -201,7 +268,7 @@ export function buildForestWalks(filled, seedStr, cx, cy, P) {
     // The ray only locates the leaf: a walk starts on top of its leaf, not at the cube ceiling,
     // so the ray's own segments are discarded.
     const end = runInitialRay(start, 1, -1, filled, new Set(), []);
-    runRandomWalkBiased(end, 1, -1, makeRng(s0, s1, 1000 + i), occupied, segs, filled, ax0, az0, P);
+    runRandomWalkBiased(end, 1, -1, makeRng(s0, s1, 1000 + i), occupied, segs, filled, ax0, az0, P, clumps);
     if (segs.length === 0) return;
     for (const sg of segs) {
       const v = [Math.min(sg[0], sg[3]), Math.min(sg[1], sg[4]), Math.min(sg[2], sg[5])].map(n => clamp(n, 0, G - 1));
@@ -209,5 +276,20 @@ export function buildForestWalks(filled, seedStr, cx, cy, P) {
     }
     walks.push({ segs, cell: [Math.min(start[0], G - 1), Math.min(start[2], G - 1)] });
   });
+
+  // Extra roots from around the trunk's foot (most walks merge before they reach the ground).
+  // Spawn points are scattered within rootSpawn cells of the foot so they don't all collide
+  // on the same four edges; each heads outward along its larger offset axis.
+  const rootRng = makeRng(s0, s1, 5000);
+  const leafCells = candidates.map(n => [Math.min(n[0], G - 1), Math.min(n[2], G - 1)]);
+  for (let i = 0; i < P.rootExtra && leafCells.length; i++) {
+    const segs = [];
+    const ox = Math.round((rootRng() * 2 - 1) * P.rootSpawn), oz = Math.round((rootRng() * 2 - 1) * P.rootSpawn);
+    const start = [clamp(Math.round(ax0) + ox, 0, G), ground(), clamp(Math.round(az0) + oz, 0, G)];
+    const ax = Math.abs(ox) >= Math.abs(oz) ? 0 : 2;
+    const d = (ax === 0 ? ox : oz) < 0 ? -1 : 1;
+    runRoot(start, ax, d, makeRng(s0, s1, 6000 + i), occupied, segs, ax0, az0, P);
+    if (segs.length) walks.push({ segs, cell: leafCells[Math.floor(rootRng() * leafCells.length)] });
+  }
   return { walks, touched };
 }
